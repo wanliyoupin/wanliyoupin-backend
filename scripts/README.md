@@ -84,3 +84,51 @@ curl -X POST http://localhost:3000/api/test-data/insert \
 ```bash
 API_URL=http://localhost:3000 node scripts/insert-test-data.mjs
 ```
+
+---
+
+## 公司商品库迁移
+
+将某公司的**分类、商品（含 SKU）、套餐**全部迁移到另一公司（修改 `company_companies` 归属，记录 ID 不变）。
+
+### 用法
+
+```bash
+cd wanliyoupin-backend
+
+# 预览（不写库）
+node scripts/migrate-company-catalog.mjs <源公司ID> <目标公司ID> --dry-run
+
+# 执行（会二次确认）
+node scripts/migrate-company-catalog.mjs <源公司ID> <目标公司ID>
+
+# 跳过确认
+node scripts/migrate-company-catalog.mjs <源公司ID> <目标公司ID> --yes
+```
+
+示例：把公司 `123` 的商品库迁到系统总部 `545`：
+
+```bash
+node scripts/migrate-company-catalog.mjs 123 545 --dry-run
+node scripts/migrate-company-catalog.mjs 123 545 --yes
+```
+
+### 配置
+
+默认读取项目根目录 `goc.config.ts` 中的 Hasura 地址与 `x-hasura-admin-secret`。也可用环境变量覆盖：
+
+```bash
+HASURA_ENDPOINT=https://your-hasura/v1/graphql \
+HASURA_ADMIN_SECRET=your-secret \
+node scripts/migrate-company-catalog.mjs 123 545 --dry-run
+```
+
+### 迁移顺序与说明
+
+1. `categories`（未删除）
+2. `products`（未删除）
+3. `product_skus`（未删除）
+4. `packages`
+5. `company_products` / `company_packages`（若目标公司已有关联同商品/套餐，会先删除源侧冲突行再更新）
+
+**注意：** 执行前请备份数据库；历史订单、购物车不受影响，但各公司 `hidden_*_ids` 中若已有这些 ID，隐藏逻辑仍按原 ID 生效。
