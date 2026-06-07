@@ -5,10 +5,12 @@ import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { useAuth } from "@/app/lib/auth-context";
 import { ImageUpload } from "@/app/components/ImageUpload";
+import { BannerMediaUpload } from "@/app/components/BannerMediaUpload";
 import { FileUpload } from "@/app/components/FileUpload";
 import { useToast } from "@/app/components/Toast";
+import { isBannerVideo, normalizeBannerItem, type BannerMediaItem } from "@/app/lib/bannerMedia";
 
-type BannerItem = { file_type?: string; file_url: string; title?: string; link?: string; sort?: number };
+type BannerItem = BannerMediaItem;
 
 export default function CompanySettingsPage() {
   const searchParams = useSearchParams();
@@ -40,8 +42,9 @@ export default function CompanySettingsPage() {
 
   const [bannerModal, setBannerModal] = useState<"top" | "bottom" | null>(null);
   const [bannerIndex, setBannerIndex] = useState(-1);
-  const [editingBanner, setEditingBanner] = useState<{ file_url: string; title: string; link: string }>({
+  const [editingBanner, setEditingBanner] = useState<{ file_url: string; file_type: "image" | "video"; title: string; link: string }>({
     file_url: "",
+    file_type: "image",
     title: "",
     link: "",
   });
@@ -68,10 +71,7 @@ export default function CompanySettingsPage() {
         );
         const m = data.mode_for_price;
         setModeForPrice(m === "company" ? "company" : "user");
-        const map = (b: unknown) =>
-          typeof b === "string"
-            ? { file_type: "image", file_url: b, title: "", link: "", sort: 0 }
-            : { file_type: "image", file_url: (b as BannerItem).file_url || "", title: (b as BannerItem).title || "", link: (b as BannerItem).link || "", sort: (b as BannerItem).sort ?? 0 };
+        const map = (b: unknown, i: number) => normalizeBannerItem(b, i);
         setTopBanners(Array.isArray(data.banner_top) ? data.banner_top.map(map) : []);
         setBottomBanners(Array.isArray(data.banner_bottom) ? data.banner_bottom.map(map) : []);
       } finally {
@@ -82,11 +82,11 @@ export default function CompanySettingsPage() {
 
   const saveBanner = () => {
     if (!editingBanner.file_url) {
-      alert("请先上传图片");
+      alert("请先上传图片或视频");
       return;
     }
     const item: BannerItem = {
-      file_type: "image",
+      file_type: editingBanner.file_type,
       file_url: editingBanner.file_url,
       title: editingBanner.title || undefined,
       link: editingBanner.link || undefined,
@@ -100,7 +100,7 @@ export default function CompanySettingsPage() {
       else setBottomBanners((prev) => prev.map((b, i) => (i === bannerIndex ? item : b)));
     }
     setBannerModal(null);
-    setEditingBanner({ file_url: "", title: "", link: "" });
+    setEditingBanner({ file_url: "", file_type: "image", title: "", link: "" });
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -204,11 +204,14 @@ export default function CompanySettingsPage() {
           <div className="flex flex-wrap gap-2">
             {topBanners.map((b, i) => (
               <div key={i} className="relative group">
-                <img
-                  src={typeof b === "string" ? b : b.file_url}
-                  alt=""
-                  className="w-24 h-24 object-cover rounded border"
-                />
+                {isBannerVideo(b) ? (
+                  <video src={b.file_url} className="w-24 h-24 object-cover rounded border bg-black" muted preload="metadata" />
+                ) : (
+                  <img src={typeof b === "string" ? b : b.file_url} alt="" className="w-24 h-24 object-cover rounded border" />
+                )}
+                {isBannerVideo(b) && (
+                  <span className="absolute bottom-0 left-0 right-0 bg-black/60 text-white text-[10px] text-center py-0.5 rounded-b">视频</span>
+                )}
                 <div className="absolute inset-0 flex items-center justify-center gap-1 opacity-0 group-hover:opacity-100 bg-black/50 rounded">
                   <button
                     type="button"
@@ -218,6 +221,7 @@ export default function CompanySettingsPage() {
                       const x = topBanners[i];
                       setEditingBanner({
                         file_url: typeof x === "string" ? x : x.file_url,
+                        file_type: typeof x === "string" ? "image" : (x.file_type === "video" || isBannerVideo(x) ? "video" : "image"),
                         title: typeof x === "string" ? "" : (x.title ?? ""),
                         link: typeof x === "string" ? "" : (x.link ?? ""),
                       });
@@ -241,7 +245,7 @@ export default function CompanySettingsPage() {
               onClick={() => {
                 setBannerModal("top");
                 setBannerIndex(-1);
-                setEditingBanner({ file_url: "", title: "", link: "" });
+                setEditingBanner({ file_url: "", file_type: "image", title: "", link: "" });
               }}
               className="w-24 h-24 bg-white border-2 border-dashed border-slate-400 rounded-lg flex items-center justify-center text-slate-600 text-sm hover:border-indigo-400 hover:bg-slate-50 transition-colors"
             >
@@ -255,11 +259,14 @@ export default function CompanySettingsPage() {
           <div className="flex flex-wrap gap-2">
             {bottomBanners.map((b, i) => (
               <div key={i} className="relative group">
-                <img
-                  src={typeof b === "string" ? b : b.file_url}
-                  alt=""
-                  className="w-24 h-24 object-cover rounded border"
-                />
+                {isBannerVideo(b) ? (
+                  <video src={b.file_url} className="w-24 h-24 object-cover rounded border bg-black" muted preload="metadata" />
+                ) : (
+                  <img src={typeof b === "string" ? b : b.file_url} alt="" className="w-24 h-24 object-cover rounded border" />
+                )}
+                {isBannerVideo(b) && (
+                  <span className="absolute bottom-0 left-0 right-0 bg-black/60 text-white text-[10px] text-center py-0.5 rounded-b">视频</span>
+                )}
                 <div className="absolute inset-0 flex items-center justify-center gap-1 opacity-0 group-hover:opacity-100 bg-black/50 rounded">
                   <button
                     type="button"
@@ -269,6 +276,7 @@ export default function CompanySettingsPage() {
                       const x = bottomBanners[i];
                       setEditingBanner({
                         file_url: typeof x === "string" ? x : x.file_url,
+                        file_type: typeof x === "string" ? "image" : (x.file_type === "video" || isBannerVideo(x) ? "video" : "image"),
                         title: typeof x === "string" ? "" : (x.title ?? ""),
                         link: typeof x === "string" ? "" : (x.link ?? ""),
                       });
@@ -292,7 +300,7 @@ export default function CompanySettingsPage() {
               onClick={() => {
                 setBannerModal("bottom");
                 setBannerIndex(-1);
-                setEditingBanner({ file_url: "", title: "", link: "" });
+                setEditingBanner({ file_url: "", file_type: "image", title: "", link: "" });
               }}
               className="w-24 h-24 bg-white border-2 border-dashed border-slate-400 rounded-lg flex items-center justify-center text-slate-600 text-sm hover:border-indigo-400 hover:bg-slate-50 transition-colors"
             >
@@ -485,11 +493,14 @@ export default function CompanySettingsPage() {
             </h3>
             <div className="space-y-3">
               <div>
-                <label className="block text-sm text-slate-600 mb-1">图片</label>
-                <ImageUpload
+                <label className="block text-sm text-slate-600 mb-1">图片 / 视频</label>
+                <BannerMediaUpload
                   value={editingBanner.file_url}
-                  onChange={(url) => setEditingBanner((p) => ({ ...p, file_url: url }))}
-                  placeholder="点击上传图片"
+                  fileType={editingBanner.file_type}
+                  onChange={(url, fileType) =>
+                    setEditingBanner((p) => ({ ...p, file_url: url, file_type: fileType }))
+                  }
+                  placeholder="点击上传图片或视频"
                 />
               </div>
               <div>
