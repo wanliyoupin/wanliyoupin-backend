@@ -139,7 +139,7 @@ export default function DashboardShell({
   const isOnlyLeadStaff =
     !!company &&
     !isAdminForSelectedCompany &&
-    (isLeadAdminForSelectedCompany || hasTrackLeadForSelectedCompany);
+    (isLeadAdminForSelectedCompany);
 
   const navActive = (href: string) =>
     pathname === href || (href.length > 1 && pathname.startsWith(`${href}/`));

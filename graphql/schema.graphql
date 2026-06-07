@@ -3993,9 +3993,6 @@ input company_lead_tracks_variance_order_by {
 
 """公司线索记录表"""
 type company_leads {
-  """外键，谁跟进"""
-  assigned_company_users: bigint
-
   """An object relationship"""
   company: companies!
 
@@ -4044,9 +4041,6 @@ type company_leads {
     where: company_lead_tracks_bool_exp
   ): company_lead_tracks_aggregate!
 
-  """An object relationship"""
-  company_user: company_users
-
   """线索转客户的时间"""
   converted_at: timestamptz
 
@@ -4061,13 +4055,19 @@ type company_leads {
   """若线索手机号已注册平台用户"""
   linked_user_users: bigint
 
+  """更多线索信息"""
+  more_info(
+    """JSON select path"""
+    path: String
+  ): json!
+
   """线索身份-名字"""
   name: String!
 
   """线索身份-电话"""
   phone: String!
 
-  """new / assigned / following / won / lost / converted"""
+  """new / lost / converted"""
   status: String!
   updated_at: timestamptz!
 
@@ -4140,9 +4140,6 @@ input company_leads_arr_rel_insert_input {
 
 """aggregate avg on columns"""
 type company_leads_avg_fields {
-  """外键，谁跟进"""
-  assigned_company_users: Float
-
   """关联外建，哪个公司的线索"""
   company_companies: Float
 
@@ -4161,9 +4158,6 @@ type company_leads_avg_fields {
 order by avg() on columns of table "company_leads"
 """
 input company_leads_avg_order_by {
-  """外键，谁跟进"""
-  assigned_company_users: order_by
-
   """关联外建，哪个公司的线索"""
   company_companies: order_by
 
@@ -4185,20 +4179,19 @@ input company_leads_bool_exp {
   _and: [company_leads_bool_exp!]
   _not: company_leads_bool_exp
   _or: [company_leads_bool_exp!]
-  assigned_company_users: bigint_comparison_exp
   company: companies_bool_exp
   companyUserByConvertedCompanyUsers: company_users_bool_exp
   companyUserByCreatedByCompanyUsers: company_users_bool_exp
   company_companies: bigint_comparison_exp
   company_lead_tracks: company_lead_tracks_bool_exp
   company_lead_tracks_aggregate: company_lead_tracks_aggregate_bool_exp
-  company_user: company_users_bool_exp
   converted_at: timestamptz_comparison_exp
   converted_company_users: bigint_comparison_exp
   created_at: timestamptz_comparison_exp
   created_by_company_users: bigint_comparison_exp
   id: bigint_comparison_exp
   linked_user_users: bigint_comparison_exp
+  more_info: json_comparison_exp
   name: String_comparison_exp
   phone: String_comparison_exp
   status: String_comparison_exp
@@ -4220,9 +4213,6 @@ enum company_leads_constraint {
 input type for incrementing numeric columns in table "company_leads"
 """
 input company_leads_inc_input {
-  """外键，谁跟进"""
-  assigned_company_users: bigint
-
   """关联外建，哪个公司的线索"""
   company_companies: bigint
 
@@ -4241,8 +4231,6 @@ input company_leads_inc_input {
 input type for inserting data into table "company_leads"
 """
 input company_leads_insert_input {
-  """外键，谁跟进"""
-  assigned_company_users: bigint
   company: companies_obj_rel_insert_input
   companyUserByConvertedCompanyUsers: company_users_obj_rel_insert_input
   companyUserByCreatedByCompanyUsers: company_users_obj_rel_insert_input
@@ -4250,7 +4238,6 @@ input company_leads_insert_input {
   """关联外建，哪个公司的线索"""
   company_companies: bigint
   company_lead_tracks: company_lead_tracks_arr_rel_insert_input
-  company_user: company_users_obj_rel_insert_input
 
   """线索转客户的时间"""
   converted_at: timestamptz
@@ -4266,13 +4253,16 @@ input company_leads_insert_input {
   """若线索手机号已注册平台用户"""
   linked_user_users: bigint
 
+  """更多线索信息"""
+  more_info: json
+
   """线索身份-名字"""
   name: String
 
   """线索身份-电话"""
   phone: String
 
-  """new / assigned / following / won / lost / converted"""
+  """new / lost / converted"""
   status: String
   updated_at: timestamptz
   user: users_obj_rel_insert_input
@@ -4280,9 +4270,6 @@ input company_leads_insert_input {
 
 """aggregate max on columns"""
 type company_leads_max_fields {
-  """外键，谁跟进"""
-  assigned_company_users: bigint
-
   """关联外建，哪个公司的线索"""
   company_companies: bigint
 
@@ -4306,7 +4293,7 @@ type company_leads_max_fields {
   """线索身份-电话"""
   phone: String
 
-  """new / assigned / following / won / lost / converted"""
+  """new / lost / converted"""
   status: String
   updated_at: timestamptz
 }
@@ -4315,9 +4302,6 @@ type company_leads_max_fields {
 order by max() on columns of table "company_leads"
 """
 input company_leads_max_order_by {
-  """外键，谁跟进"""
-  assigned_company_users: order_by
-
   """关联外建，哪个公司的线索"""
   company_companies: order_by
 
@@ -4341,16 +4325,13 @@ input company_leads_max_order_by {
   """线索身份-电话"""
   phone: order_by
 
-  """new / assigned / following / won / lost / converted"""
+  """new / lost / converted"""
   status: order_by
   updated_at: order_by
 }
 
 """aggregate min on columns"""
 type company_leads_min_fields {
-  """外键，谁跟进"""
-  assigned_company_users: bigint
-
   """关联外建，哪个公司的线索"""
   company_companies: bigint
 
@@ -4374,7 +4355,7 @@ type company_leads_min_fields {
   """线索身份-电话"""
   phone: String
 
-  """new / assigned / following / won / lost / converted"""
+  """new / lost / converted"""
   status: String
   updated_at: timestamptz
 }
@@ -4383,9 +4364,6 @@ type company_leads_min_fields {
 order by min() on columns of table "company_leads"
 """
 input company_leads_min_order_by {
-  """外键，谁跟进"""
-  assigned_company_users: order_by
-
   """关联外建，哪个公司的线索"""
   company_companies: order_by
 
@@ -4409,7 +4387,7 @@ input company_leads_min_order_by {
   """线索身份-电话"""
   phone: order_by
 
-  """new / assigned / following / won / lost / converted"""
+  """new / lost / converted"""
   status: order_by
   updated_at: order_by
 }
@@ -4446,19 +4424,18 @@ input company_leads_on_conflict {
 
 """Ordering options when selecting data from "company_leads"."""
 input company_leads_order_by {
-  assigned_company_users: order_by
   company: companies_order_by
   companyUserByConvertedCompanyUsers: company_users_order_by
   companyUserByCreatedByCompanyUsers: company_users_order_by
   company_companies: order_by
   company_lead_tracks_aggregate: company_lead_tracks_aggregate_order_by
-  company_user: company_users_order_by
   converted_at: order_by
   converted_company_users: order_by
   created_at: order_by
   created_by_company_users: order_by
   id: order_by
   linked_user_users: order_by
+  more_info: order_by
   name: order_by
   phone: order_by
   status: order_by
@@ -4475,9 +4452,6 @@ input company_leads_pk_columns_input {
 select columns of table "company_leads"
 """
 enum company_leads_select_column {
-  """column name"""
-  assigned_company_users
-
   """column name"""
   company_companies
 
@@ -4500,6 +4474,9 @@ enum company_leads_select_column {
   linked_user_users
 
   """column name"""
+  more_info
+
+  """column name"""
   name
 
   """column name"""
@@ -4516,9 +4493,6 @@ enum company_leads_select_column {
 input type for updating data in table "company_leads"
 """
 input company_leads_set_input {
-  """外键，谁跟进"""
-  assigned_company_users: bigint
-
   """关联外建，哪个公司的线索"""
   company_companies: bigint
 
@@ -4536,22 +4510,22 @@ input company_leads_set_input {
   """若线索手机号已注册平台用户"""
   linked_user_users: bigint
 
+  """更多线索信息"""
+  more_info: json
+
   """线索身份-名字"""
   name: String
 
   """线索身份-电话"""
   phone: String
 
-  """new / assigned / following / won / lost / converted"""
+  """new / lost / converted"""
   status: String
   updated_at: timestamptz
 }
 
 """aggregate stddev on columns"""
 type company_leads_stddev_fields {
-  """外键，谁跟进"""
-  assigned_company_users: Float
-
   """关联外建，哪个公司的线索"""
   company_companies: Float
 
@@ -4570,9 +4544,6 @@ type company_leads_stddev_fields {
 order by stddev() on columns of table "company_leads"
 """
 input company_leads_stddev_order_by {
-  """外键，谁跟进"""
-  assigned_company_users: order_by
-
   """关联外建，哪个公司的线索"""
   company_companies: order_by
 
@@ -4589,9 +4560,6 @@ input company_leads_stddev_order_by {
 
 """aggregate stddev_pop on columns"""
 type company_leads_stddev_pop_fields {
-  """外键，谁跟进"""
-  assigned_company_users: Float
-
   """关联外建，哪个公司的线索"""
   company_companies: Float
 
@@ -4610,9 +4578,6 @@ type company_leads_stddev_pop_fields {
 order by stddev_pop() on columns of table "company_leads"
 """
 input company_leads_stddev_pop_order_by {
-  """外键，谁跟进"""
-  assigned_company_users: order_by
-
   """关联外建，哪个公司的线索"""
   company_companies: order_by
 
@@ -4629,9 +4594,6 @@ input company_leads_stddev_pop_order_by {
 
 """aggregate stddev_samp on columns"""
 type company_leads_stddev_samp_fields {
-  """外键，谁跟进"""
-  assigned_company_users: Float
-
   """关联外建，哪个公司的线索"""
   company_companies: Float
 
@@ -4650,9 +4612,6 @@ type company_leads_stddev_samp_fields {
 order by stddev_samp() on columns of table "company_leads"
 """
 input company_leads_stddev_samp_order_by {
-  """外键，谁跟进"""
-  assigned_company_users: order_by
-
   """关联外建，哪个公司的线索"""
   company_companies: order_by
 
@@ -4680,9 +4639,6 @@ input company_leads_stream_cursor_input {
 
 """Initial value of the column from where the streaming should start"""
 input company_leads_stream_cursor_value_input {
-  """外键，谁跟进"""
-  assigned_company_users: bigint
-
   """关联外建，哪个公司的线索"""
   company_companies: bigint
 
@@ -4700,22 +4656,22 @@ input company_leads_stream_cursor_value_input {
   """若线索手机号已注册平台用户"""
   linked_user_users: bigint
 
+  """更多线索信息"""
+  more_info: json
+
   """线索身份-名字"""
   name: String
 
   """线索身份-电话"""
   phone: String
 
-  """new / assigned / following / won / lost / converted"""
+  """new / lost / converted"""
   status: String
   updated_at: timestamptz
 }
 
 """aggregate sum on columns"""
 type company_leads_sum_fields {
-  """外键，谁跟进"""
-  assigned_company_users: bigint
-
   """关联外建，哪个公司的线索"""
   company_companies: bigint
 
@@ -4734,9 +4690,6 @@ type company_leads_sum_fields {
 order by sum() on columns of table "company_leads"
 """
 input company_leads_sum_order_by {
-  """外键，谁跟进"""
-  assigned_company_users: order_by
-
   """关联外建，哪个公司的线索"""
   company_companies: order_by
 
@@ -4755,9 +4708,6 @@ input company_leads_sum_order_by {
 update columns of table "company_leads"
 """
 enum company_leads_update_column {
-  """column name"""
-  assigned_company_users
-
   """column name"""
   company_companies
 
@@ -4778,6 +4728,9 @@ enum company_leads_update_column {
 
   """column name"""
   linked_user_users
+
+  """column name"""
+  more_info
 
   """column name"""
   name
@@ -4805,9 +4758,6 @@ input company_leads_updates {
 
 """aggregate var_pop on columns"""
 type company_leads_var_pop_fields {
-  """外键，谁跟进"""
-  assigned_company_users: Float
-
   """关联外建，哪个公司的线索"""
   company_companies: Float
 
@@ -4826,9 +4776,6 @@ type company_leads_var_pop_fields {
 order by var_pop() on columns of table "company_leads"
 """
 input company_leads_var_pop_order_by {
-  """外键，谁跟进"""
-  assigned_company_users: order_by
-
   """关联外建，哪个公司的线索"""
   company_companies: order_by
 
@@ -4845,9 +4792,6 @@ input company_leads_var_pop_order_by {
 
 """aggregate var_samp on columns"""
 type company_leads_var_samp_fields {
-  """外键，谁跟进"""
-  assigned_company_users: Float
-
   """关联外建，哪个公司的线索"""
   company_companies: Float
 
@@ -4866,9 +4810,6 @@ type company_leads_var_samp_fields {
 order by var_samp() on columns of table "company_leads"
 """
 input company_leads_var_samp_order_by {
-  """外键，谁跟进"""
-  assigned_company_users: order_by
-
   """关联外建，哪个公司的线索"""
   company_companies: order_by
 
@@ -4885,9 +4826,6 @@ input company_leads_var_samp_order_by {
 
 """aggregate variance on columns"""
 type company_leads_variance_fields {
-  """外键，谁跟进"""
-  assigned_company_users: Float
-
   """关联外建，哪个公司的线索"""
   company_companies: Float
 
@@ -4906,9 +4844,6 @@ type company_leads_variance_fields {
 order by variance() on columns of table "company_leads"
 """
 input company_leads_variance_order_by {
-  """外键，谁跟进"""
-  assigned_company_users: order_by
-
   """关联外建，哪个公司的线索"""
   company_companies: order_by
 
@@ -6091,51 +6026,13 @@ type company_users {
     """filter the rows returned"""
     where: company_lead_tracks_bool_exp
   ): company_lead_tracks_aggregate!
-
-  """An array relationship"""
-  company_leads(
-    """distinct select on columns"""
-    distinct_on: [company_leads_select_column!]
-
-    """limit the number of rows returned"""
-    limit: Int
-
-    """skip the first n rows. Use only with order_by"""
-    offset: Int
-
-    """sort the rows by one or more columns"""
-    order_by: [company_leads_order_by!]
-
-    """filter the rows returned"""
-    where: company_leads_bool_exp
-  ): [company_leads!]!
-
-  """An aggregate relationship"""
-  company_leads_aggregate(
-    """distinct select on columns"""
-    distinct_on: [company_leads_select_column!]
-
-    """limit the number of rows returned"""
-    limit: Int
-
-    """skip the first n rows. Use only with order_by"""
-    offset: Int
-
-    """sort the rows by one or more columns"""
-    order_by: [company_leads_order_by!]
-
-    """filter the rows returned"""
-    where: company_leads_bool_exp
-  ): company_leads_aggregate!
   created_at: timestamptz!
   id: bigint!
 
   """客户等级划分 1.A 2.B 3.C 4.D 5.E"""
   level: String!
 
-  """
-  用户权限 1.admin_lead（管理线索） 2. track_lead（跟进线索） 可以有多个,多个用&连接，如：admin_lead&track_lead
-  """
+  """用户权限 admin_lead 可以看到线索功能"""
   permissions: String
 
   """该用户在公司下看到的价格系数（大于0数值），默认为1表示和产品价格一致"""
@@ -6275,8 +6172,6 @@ input company_users_bool_exp {
   company_companies: bigint_comparison_exp
   company_lead_tracks: company_lead_tracks_bool_exp
   company_lead_tracks_aggregate: company_lead_tracks_aggregate_bool_exp
-  company_leads: company_leads_bool_exp
-  company_leads_aggregate: company_leads_aggregate_bool_exp
   created_at: timestamptz_comparison_exp
   id: bigint_comparison_exp
   level: String_comparison_exp
@@ -6331,16 +6226,13 @@ input company_users_insert_input {
   """公司id"""
   company_companies: bigint
   company_lead_tracks: company_lead_tracks_arr_rel_insert_input
-  company_leads: company_leads_arr_rel_insert_input
   created_at: timestamptz
   id: bigint
 
   """客户等级划分 1.A 2.B 3.C 4.D 5.E"""
   level: String
 
-  """
-  用户权限 1.admin_lead（管理线索） 2. track_lead（跟进线索） 可以有多个,多个用&连接，如：admin_lead&track_lead
-  """
+  """用户权限 admin_lead 可以看到线索功能"""
   permissions: String
 
   """该用户在公司下看到的价格系数（大于0数值），默认为1表示和产品价格一致"""
@@ -6365,9 +6257,7 @@ type company_users_max_fields {
   """客户等级划分 1.A 2.B 3.C 4.D 5.E"""
   level: String
 
-  """
-  用户权限 1.admin_lead（管理线索） 2. track_lead（跟进线索） 可以有多个,多个用&连接，如：admin_lead&track_lead
-  """
+  """用户权限 admin_lead 可以看到线索功能"""
   permissions: String
 
   """该用户在公司下看到的价格系数（大于0数值），默认为1表示和产品价格一致"""
@@ -6393,9 +6283,7 @@ input company_users_max_order_by {
   """客户等级划分 1.A 2.B 3.C 4.D 5.E"""
   level: order_by
 
-  """
-  用户权限 1.admin_lead（管理线索） 2. track_lead（跟进线索） 可以有多个,多个用&连接，如：admin_lead&track_lead
-  """
+  """用户权限 admin_lead 可以看到线索功能"""
   permissions: order_by
 
   """该用户在公司下看到的价格系数（大于0数值），默认为1表示和产品价格一致"""
@@ -6419,9 +6307,7 @@ type company_users_min_fields {
   """客户等级划分 1.A 2.B 3.C 4.D 5.E"""
   level: String
 
-  """
-  用户权限 1.admin_lead（管理线索） 2. track_lead（跟进线索） 可以有多个,多个用&连接，如：admin_lead&track_lead
-  """
+  """用户权限 admin_lead 可以看到线索功能"""
   permissions: String
 
   """该用户在公司下看到的价格系数（大于0数值），默认为1表示和产品价格一致"""
@@ -6447,9 +6333,7 @@ input company_users_min_order_by {
   """客户等级划分 1.A 2.B 3.C 4.D 5.E"""
   level: order_by
 
-  """
-  用户权限 1.admin_lead（管理线索） 2. track_lead（跟进线索） 可以有多个,多个用&连接，如：admin_lead&track_lead
-  """
+  """用户权限 admin_lead 可以看到线索功能"""
   permissions: order_by
 
   """该用户在公司下看到的价格系数（大于0数值），默认为1表示和产品价格一致"""
@@ -6501,7 +6385,6 @@ input company_users_order_by {
   companyLeadsByCreatedByCompanyUsers_aggregate: company_leads_aggregate_order_by
   company_companies: order_by
   company_lead_tracks_aggregate: company_lead_tracks_aggregate_order_by
-  company_leads_aggregate: company_leads_aggregate_order_by
   created_at: order_by
   id: order_by
   level: order_by
@@ -6584,9 +6467,7 @@ input company_users_set_input {
   """客户等级划分 1.A 2.B 3.C 4.D 5.E"""
   level: String
 
-  """
-  用户权限 1.admin_lead（管理线索） 2. track_lead（跟进线索） 可以有多个,多个用&连接，如：admin_lead&track_lead
-  """
+  """用户权限 admin_lead 可以看到线索功能"""
   permissions: String
 
   """该用户在公司下看到的价格系数（大于0数值），默认为1表示和产品价格一致"""
@@ -6708,9 +6589,7 @@ input company_users_stream_cursor_value_input {
   """客户等级划分 1.A 2.B 3.C 4.D 5.E"""
   level: String
 
-  """
-  用户权限 1.admin_lead（管理线索） 2. track_lead（跟进线索） 可以有多个,多个用&连接，如：admin_lead&track_lead
-  """
+  """用户权限 admin_lead 可以看到线索功能"""
   permissions: String
 
   """该用户在公司下看到的价格系数（大于0数值），默认为1表示和产品价格一致"""

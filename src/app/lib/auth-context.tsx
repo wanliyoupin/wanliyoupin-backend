@@ -60,9 +60,9 @@ interface AuthContextValue extends AuthState {
   isAdminForSelectedCompany: boolean;
   /** 当前公司在 company_users 下是否具备线索管理权（admin_lead 或公司 role=admin） */
   isLeadAdminForSelectedCompany: boolean;
-  /** 当前公司是否具备 track_lead */
+  /** 当前公司是否具备 track_lead（已废弃，恒为 false） */
   hasTrackLeadForSelectedCompany: boolean;
-  /** 可进入「我的公司 → 线索管理」（公司管理员 / admin_lead / track_lead） */
+  /** 可进入「我的公司 → 线索管理」（公司管理员 / admin_lead） */
   canAccessCompanyLeads: boolean;
   /** 查询商品/分类/套餐等时用：当前公司 id + 系统配置公司 id（总部），去重后的数组 */
   companyIdsIncludingSystem: number[];
@@ -275,10 +275,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     Number.isFinite(selectedCid) &&
     !!selectedCu &&
     (selectedCu.role === "admin" || permKeys.has("admin_lead"));
-  const hasTrackLeadForSelectedCompany =
-    Number.isFinite(selectedCid) && !!selectedCu && permKeys.has("track_lead");
+  const hasTrackLeadForSelectedCompany = false;
   const canAccessCompanyLeads =
-    isAdminForSelectedCompany || isLeadAdminForSelectedCompany || hasTrackLeadForSelectedCompany;
+    isAdminForSelectedCompany || isLeadAdminForSelectedCompany;
 
   /** 查询商品/分类/套餐等时使用的公司 id 列表：当前选中公司 + 系统配置公司（总部），去重 */
   const companyIdsIncludingSystem: number[] = [

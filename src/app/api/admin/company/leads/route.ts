@@ -2,9 +2,10 @@ import { NextRequest, NextResponse } from "next/server";
 import { getHasuraClient } from "@/config-lib/hasura-graphql-client/hasura-graphql-client";
 import {
   actorCompanyUserId,
-  actorHasAdminLead,
   isJwtPlatformAdmin,
-  normalizeLeadStatus,
+  parseLeadLocationInput,
+  parseLeadMoreInfoInput,
+  mergeLeadMoreInfoFields,
   resolveLeadActor,
   type LeadActor,
 } from "../../lib/leadAuth";
@@ -68,16 +69,14 @@ export async function GET(req: NextRequest) {
     );
   }
 
-  if (!actorHasAdminLead(actor)) {
+  if (actor.kind !== "platform_admin") {
     const myId = actorCompanyUserId(actor);
     if (myId == null) {
       return NextResponse.json({ error: "无法筛选线索" }, { status: 403 });
     }
     variables.myCuId = myId;
     varDecls.push("$myCuId: bigint!");
-    andParts.push(
-      `{ _or: [ { assigned_company_users: { _eq: $myCuId } }, { created_by_company_users: { _eq: $myCuId } } ] }`
-    );
+    andParts.push("{ created_by_company_users: { _eq: $myCuId } }");
   }
 
   const whereClause =
@@ -100,24 +99,25 @@ export async function GET(req: NextRequest) {
           id
           name
         }
-        assigned_company_users
         created_by_company_users
         converted_company_users
         converted_at
         linked_user_users
         created_at
         updated_at
+        more_info
         companyUserByCreatedByCompanyUsers {
-          id
-          user { id nickname mobile }
-        }
-        company_user {
           id
           user { id nickname mobile }
         }
         companyUserByConvertedCompanyUsers {
           id
           user { id nickname mobile }
+        }
+        company_lead_tracks(order_by: { created_at: asc }) {
+          id
+          content
+          created_at
         }
       }
       company_leads_aggregate(where: ${whereClause}) {
@@ -151,7 +151,14 @@ export async function GET(req: NextRequest) {
  * Body: { companyId, name, phone, status? } — status 默认 new
  */
 export async function POST(req: NextRequest) {
-  let body: { companyId?: number; name?: string; phone?: string; status?: string };
+  let body: {
+    companyId?: number;
+    name?: string;
+    phone?: string;
+    status?: string;
+    location?: unknown;
+    moreInfo?: unknown;
+  };
   try {
     body = await req.json();
   } catch {
@@ -166,14 +173,26 @@ export async function POST(req: NextRequest) {
 
   const actor = await resolveLeadActor(req, companyId);
   if (actor instanceof NextResponse) return actor;
-  if (!actorHasAdminLead(actor)) {
-    return NextResponse.json({ error: "仅线索管理员可录入线索" }, { status: 403 });
+
+  const myCuId = actorCompanyUserId(actor);
+  if (actor.kind === "company_user" && myCuId == null) {
+    return NextResponse.json({ error: "无法创建线索" }, { status: 403 });
   }
 
-  const statusRaw = body.status != null ? normalizeLeadStatus(body.status) : "new";
-  const status = statusRaw === "assigned" ? "assigned" : "new";
-
-  const createdBy = actorCompanyUserId(actor);
+  const status = "new";
+  const locationParsed = parseLeadLocationInput(body.location);
+  if (body.location !== undefined && locationParsed === undefined) {
+    return NextResponse.json({ error: "无效的 location（需 latitude / longitude）" }, { status: 400 });
+  }
+  const moreInfoPatch = parseLeadMoreInfoInput(body.moreInfo);
+  if (body.moreInfo !== undefined && moreInfoPatch === undefined) {
+    return NextResponse.json({ error: "无效的 moreInfo" }, { status: 400 });
+  }
+  const mergedPatch = {
+    ...(moreInfoPatch ?? {}),
+    companyName: moreInfoPatch?.companyName ?? name,
+  };
+  const moreInfo = mergeLeadMoreInfoFields(null, mergedPatch, locationParsed ?? undefined);
 
   try {
     const client = getHasuraClient();
@@ -187,6 +206,7 @@ export async function POST(req: NextRequest) {
           company_companies
           created_by_company_users
           created_at
+          more_info
         }
       }
     `;
@@ -196,7 +216,8 @@ export async function POST(req: NextRequest) {
       phone,
       status,
     };
-    if (createdBy != null) object.created_by_company_users = createdBy;
+    if (myCuId != null) object.created_by_company_users = myCuId;
+    if (moreInfo !== undefined && moreInfo !== null) object.more_info = moreInfo;
 
     const res = await client.execute({
       query: mutation,

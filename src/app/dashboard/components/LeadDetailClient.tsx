@@ -1,9 +1,17 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { useParams, useSearchParams } from "next/navigation";
 import { useAuth } from "@/app/lib/auth-context";
+import {
+  buildMoreInfoUpdatePayload,
+  parseLeadProfileForm,
+  parseLeadLocationFromMoreInfo,
+  formatLeadLocationText,
+  type LeadProfileForm,
+} from "@/app/dashboard/components/leadProfileFields";
+import { LeadProfileFormFields } from "@/app/dashboard/components/LeadProfileFormFields";
 
 export type LeadDetailScope = "company" | "admin";
 
@@ -22,39 +30,17 @@ type LeadDetail = {
   status: string;
   company_companies: number;
   company?: { id: number; name: string } | null;
-  assigned_company_users?: number | null;
+  created_by_company_users?: number | null;
   converted_company_users?: number | null;
   converted_at?: string | null;
   linked_user_users?: number | null;
-  company_user?: {
+  more_info?: unknown;
+  companyUserByCreatedByCompanyUsers?: {
     id: number;
-    user?: { id: number; nickname?: string; mobile?: string; role?: string | null };
-  } | null;
-  assignee_company_user?: {
-    id: number;
-    role?: string;
-    user?: { id: number; nickname?: string; mobile?: string; role?: string | null };
+    user?: { id: number; nickname?: string; mobile?: string };
   } | null;
   company_lead_tracks?: TrackRow[];
 };
-
-type CompanyUserOption = {
-  id: number;
-  role?: string;
-  user?: { id: number; nickname?: string; mobile?: string; role?: string | null };
-};
-
-function assigneeOptionLabel(u: CompanyUserOption): string {
-  const nick = u.user?.nickname?.trim();
-  const mobile = u.user?.mobile?.trim();
-  const guest = u.user?.role === "wx_guest_user";
-  const companyRole = u.role === "admin" ? "公司管理员" : guest ? "微信访客" : "成员";
-  const suffix = ` · ${companyRole}`;
-  if (nick && mobile) return `${nick}（${mobile}）${suffix}`;
-  if (nick) return `${nick}${suffix}`;
-  if (mobile) return `${mobile}${suffix}`;
-  return `成员 #${u.id}${suffix}`;
-}
 
 type TrackAttachment = { file_type: string; file_url: string; name: string };
 
@@ -203,9 +189,6 @@ function PendingAttachmentsPreview({ files }: { files: TrackAttachment[] }) {
 function statusLabel(s: string) {
   const m: Record<string, string> = {
     new: "新建",
-    assigned: "已分配",
-    following: "跟进中",
-    won: "成交",
     lost: "失败",
     converted: "已转客户",
   };
@@ -224,24 +207,60 @@ export function LeadDetailClient({ scope }: { scope: LeadDetailScope }) {
         : "/dashboard/admin/leads"
       : "/dashboard/company/leads";
 
-  const { token, company, user, isAdminForSelectedCompany, isLeadAdminForSelectedCompany } =
-    useAuth();
+  const { token, company, user, company_users } = useAuth();
 
   const [lead, setLead] = useState<LeadDetail | null>(null);
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState("");
+  const [profileForm, setProfileForm] = useState<LeadProfileForm | null>(null);
+  const [profileSaving, setProfileSaving] = useState(false);
 
-  const [assignListRaw, setAssignListRaw] = useState<CompanyUserOption[]>([]);
-  const [assignValue, setAssignValue] = useState<string>("");
   const [statusValue, setStatusValue] = useState("");
   const [actionMsg, setActionMsg] = useState("");
 
   const [trackContent, setTrackContent] = useState("");
   const [trackFiles, setTrackFiles] = useState<TrackAttachment[]>([]);
   const [uploading, setUploading] = useState(false);
+  const [storefrontUploading, setStorefrontUploading] = useState(false);
 
-  const isLeadAdmin =
-    user?.role === "admin" || isAdminForSelectedCompany || isLeadAdminForSelectedCompany;
+  const isPlatformAdmin = user?.role === "admin";
+  const myCompanyUserId = company
+    ? company_users.find((cu) => Number(cu.company.id) === Number(company.id))?.id
+    : undefined;
+
+  const canManage =
+    !!lead &&
+    (isPlatformAdmin ||
+      (myCompanyUserId != null &&
+        lead.created_by_company_users === myCompanyUserId));
+
+  const canEditProfile = !!canManage && lead!.status !== "converted";
+  const canAddTrack = !!canManage && lead!.status !== "converted";
+
+  const patchField = (key: keyof LeadProfileForm, value: string) => {
+    setProfileForm((prev) => (prev ? { ...prev, [key]: value } : prev));
+  };
+
+  const onProfileSave = async () => {
+    if (!token || !profileForm) return;
+    const name = profileForm.name.trim();
+    const phone = profileForm.phone.trim();
+    if (!name || !phone) {
+      setActionMsg("请填写公司名称与手机号");
+      return;
+    }
+    setProfileSaving(true);
+    setActionMsg("");
+    try {
+      await patchLead({
+        name,
+        phone,
+        moreInfo: buildMoreInfoUpdatePayload(profileForm),
+      });
+    } finally {
+      setProfileSaving(false);
+    }
+  };
 
   const loadLead = useCallback(async () => {
     if (!token || !Number.isInteger(leadId) || !(leadId >= 1)) return;
@@ -258,70 +277,17 @@ export function LeadDetailClient({ scope }: { scope: LeadDetailScope }) {
         return;
       }
       setLead(data as LeadDetail);
-      const st = data.status ?? "";
-      const full =
-        user?.role === "admin" || isAdminForSelectedCompany || isLeadAdminForSelectedCompany;
-      if (full) {
-        setStatusValue(st);
-      } else {
-        const t = ["following", "won", "lost"];
-        setStatusValue(t.includes(st) ? st : "following");
-      }
-      setAssignValue(
-        data.assigned_company_users != null ? String(data.assigned_company_users) : ""
-      );
+      setProfileForm(parseLeadProfileForm(data as LeadDetail));
+      const st = data.status ?? "new";
+      setStatusValue(st === "lost" ? "lost" : "new");
     } finally {
       setLoading(false);
     }
-  }, [token, leadId, user?.role, isAdminForSelectedCompany, isLeadAdminForSelectedCompany]);
+  }, [token, leadId]);
 
   useEffect(() => {
     loadLead();
   }, [loadLead]);
-
-  useEffect(() => {
-    if (!token || !lead?.company_companies || !isLeadAdmin) {
-      setAssignListRaw([]);
-      return;
-    }
-    const cid = lead.company_companies;
-    fetch(`/api/admin/company/users?companyId=${cid}&forLeadAssignee=1&limit=500&offset=0`, {
-      headers: { Authorization: `Bearer ${token}` },
-    })
-      .then((r) => (r.ok ? r.json() : null))
-      .then((data) => {
-        setAssignListRaw((data?.users ?? []) as CompanyUserOption[]);
-      })
-      .catch(() => {});
-  }, [token, lead?.company_companies, isLeadAdmin]);
-
-  const assignOptions = useMemo(() => {
-    const rows = [...assignListRaw];
-    const ids = new Set(rows.map((u) => Number(u.id)));
-    if (!lead) return rows;
-    const aid = lead.assigned_company_users;
-    const cu = lead.assignee_company_user;
-    if (
-      aid != null &&
-      cu?.id != null &&
-      Number(cu.id) === Number(aid) &&
-      !ids.has(Number(cu.id))
-    ) {
-      rows.push({
-        id: cu.id,
-        role: cu.role ?? "user",
-        user: cu.user
-          ? {
-              id: cu.user.id,
-              nickname: cu.user.nickname,
-              mobile: cu.user.mobile,
-              role: cu.user.role ?? null,
-            }
-          : undefined,
-      });
-    }
-    return rows;
-  }, [assignListRaw, lead]);
 
   const patchLead = async (body: Record<string, unknown>) => {
     if (!token) return;
@@ -341,15 +307,6 @@ export function LeadDetailClient({ scope }: { scope: LeadDetailScope }) {
     }
     setActionMsg("已保存");
     loadLead();
-  };
-
-  const onAssignSave = () => {
-    const v = assignValue === "" ? null : Number(assignValue);
-    if (v !== null && (!Number.isInteger(v) || !(v >= 1))) {
-      setActionMsg("无效的跟进人");
-      return;
-    }
-    patchLead({ assigned_company_users: v, ...(v != null ? { status: "assigned" } : {}) });
   };
 
   const onStatusSave = () => {
@@ -404,6 +361,29 @@ export function LeadDetailClient({ scope }: { scope: LeadDetailScope }) {
       setActionMsg(e instanceof Error ? e.message : "上传失败");
     } finally {
       setUploading(false);
+    }
+  };
+
+  const uploadStorefrontImage = async (file: File) => {
+    if (!token || !profileForm) return;
+    setStorefrontUploading(true);
+    setActionMsg("");
+    try {
+      const fd = new FormData();
+      fd.append("file", file);
+      const res = await fetch("/api/admin/upload", {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}` },
+        body: fd,
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error ?? "上传失败");
+      patchField("storefrontImageUrl", data.url as string);
+      setActionMsg("门头图片已上传，请点击「保存线索资料」");
+    } catch (e: unknown) {
+      setActionMsg(e instanceof Error ? e.message : "上传失败");
+    } finally {
+      setStorefrontUploading(false);
     }
   };
 
@@ -483,24 +463,18 @@ export function LeadDetailClient({ scope }: { scope: LeadDetailScope }) {
       <div className="rounded-2xl border border-indigo-100 bg-indigo-50/60 px-4 py-3 text-sm text-indigo-950 shadow-sm">
         <span className="font-semibold">线索归属公司：</span>
         {lead.company.name}
-        <span className="text-indigo-800/80">（分配跟进人仍为该公司成员）</span>
       </div>
     ) : null;
 
   const statusBadgeClass =
-    lead.status === "won"
-      ? "bg-emerald-100 text-emerald-800 ring-emerald-600/20"
-      : lead.status === "lost"
-        ? "bg-rose-100 text-rose-800 ring-rose-600/20"
-        : lead.status === "converted"
-          ? "bg-violet-100 text-violet-800 ring-violet-600/20"
-          : lead.status === "following"
-            ? "bg-sky-100 text-sky-800 ring-sky-600/20"
-            : lead.status === "assigned"
-              ? "bg-amber-100 text-amber-900 ring-amber-600/20"
-              : lead.status === "new"
-                ? "bg-slate-100 text-slate-800 ring-slate-600/15"
-                : "bg-slate-100 text-slate-800 ring-slate-600/15";
+    lead.status === "lost"
+      ? "bg-rose-100 text-rose-800 ring-rose-600/20"
+      : lead.status === "converted"
+        ? "bg-violet-100 text-violet-800 ring-violet-600/20"
+        : "bg-slate-100 text-slate-800 ring-slate-600/15";
+
+  const leadLocation = parseLeadLocationFromMoreInfo(lead.more_info);
+  const leadLocationText = formatLeadLocationText(leadLocation);
 
   return (
     <div className="mx-auto max-w-4xl space-y-6 pb-8">
@@ -545,6 +519,27 @@ export function LeadDetailClient({ scope }: { scope: LeadDetailScope }) {
                 </dd>
               </div>
             )}
+            {lead.companyUserByCreatedByCompanyUsers?.user && (
+              <div className="rounded-xl border border-slate-100 bg-white/80 px-4 py-3 shadow-sm">
+                <dt className="text-xs font-semibold text-slate-500">录入人</dt>
+                <dd className="mt-0.5 font-medium text-slate-900">
+                  {lead.companyUserByCreatedByCompanyUsers.user.nickname ||
+                    lead.companyUserByCreatedByCompanyUsers.user.mobile ||
+                    "—"}
+                </dd>
+              </div>
+            )}
+            {leadLocationText && (
+              <div className="rounded-xl border border-slate-100 bg-white/80 px-4 py-3 shadow-sm sm:col-span-2">
+                <dt className="text-xs font-semibold text-slate-500">IP 定位</dt>
+                <dd className="mt-0.5 text-sm font-medium text-slate-900">{leadLocationText}</dd>
+                {leadLocation && (
+                  <dd className="mt-1 font-mono text-xs text-slate-500">
+                    {leadLocation.latitude.toFixed(5)}, {leadLocation.longitude.toFixed(5)}
+                  </dd>
+                )}
+              </div>
+            )}
           </dl>
         </div>
 
@@ -552,39 +547,37 @@ export function LeadDetailClient({ scope }: { scope: LeadDetailScope }) {
 
         {actionMsg && (
           <p
-            className={`text-sm ${actionMsg.includes("失败") || actionMsg.includes("无效") ? "text-red-600" : "text-green-700"}`}
+            className={`text-sm ${actionMsg.includes("失败") || actionMsg.includes("无效") || actionMsg.includes("请填写") ? "text-red-600" : "text-green-700"}`}
           >
             {actionMsg}
           </p>
         )}
 
-        {isLeadAdmin && lead.status !== "converted" && (
+        {canEditProfile && profileForm && (
           <div className="border-t border-slate-100 pt-5 space-y-4">
-            <div className="flex flex-wrap items-end gap-3">
-              <div>
-                <label className="mb-1 block text-sm font-semibold text-slate-900">分配跟进人</label>
-                <select
-                  className="min-w-[280px] max-w-full rounded border border-slate-400 bg-white px-3 py-2 text-sm font-medium text-slate-900 shadow-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
-                  value={assignValue}
-                  onChange={(e) => setAssignValue(e.target.value)}
-                >
-                  <option value="">未分配</option>
-                  {assignOptions.map((u) => (
-                    <option key={u.id} value={String(u.id)}>
-                      {assigneeOptionLabel(u)}
-                    </option>
-                  ))}
-                </select>
-              </div>
-              <button
-                type="button"
-                onClick={onAssignSave}
-                className="rounded bg-slate-800 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-slate-900"
-              >
-                保存分配
-              </button>
+            <div>
+              <h2 className="text-base font-bold text-slate-900">编辑线索资料</h2>
+              <p className="mt-1 text-sm text-slate-600">与跑盘模板字段一致，保存后同步至导出表格。</p>
             </div>
+            <LeadProfileFormFields
+              form={profileForm}
+              onChange={patchField}
+              onStorefrontUpload={uploadStorefrontImage}
+              storefrontUploading={storefrontUploading}
+            />
+            <button
+              type="button"
+              disabled={profileSaving}
+              onClick={() => void onProfileSave()}
+              className="rounded bg-teal-700 px-4 py-2 text-sm font-semibold text-white hover:bg-teal-800 disabled:opacity-50"
+            >
+              {profileSaving ? "保存中…" : "保存线索资料"}
+            </button>
+          </div>
+        )}
 
+        {canManage && lead.status !== "converted" && (
+          <div className="border-t border-slate-100 pt-5 space-y-4">
             <div className="flex flex-wrap items-end gap-3">
               <div>
                 <label className="mb-1 block text-sm font-semibold text-slate-900">状态</label>
@@ -594,9 +587,6 @@ export function LeadDetailClient({ scope }: { scope: LeadDetailScope }) {
                   onChange={(e) => setStatusValue(e.target.value)}
                 >
                   <option value="new">新建</option>
-                  <option value="assigned">已分配</option>
-                  <option value="following">跟进中</option>
-                  <option value="won">成交</option>
                   <option value="lost">失败</option>
                 </select>
               </div>
@@ -617,35 +607,10 @@ export function LeadDetailClient({ scope }: { scope: LeadDetailScope }) {
             </div>
           </div>
         )}
-
-        {!isLeadAdmin && lead.status !== "converted" && (
-          <div className="border-t border-slate-100 pt-5">
-            <p className="mb-2 text-sm font-medium text-slate-800">
-              跟进人可更新状态（following / won / lost）
-            </p>
-            <div className="flex flex-wrap items-end gap-3">
-              <select
-                className="rounded border border-slate-400 bg-white px-3 py-2 text-sm font-medium text-slate-900 shadow-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
-                value={statusValue}
-                onChange={(e) => setStatusValue(e.target.value)}
-              >
-                <option value="following">跟进中</option>
-                <option value="won">成交</option>
-                <option value="lost">失败</option>
-              </select>
-              <button
-                type="button"
-                onClick={onStatusSave}
-                className="rounded border border-slate-400 bg-white px-3 py-2 text-sm font-semibold text-slate-900 shadow-sm hover:bg-slate-50"
-              >
-                更新状态
-              </button>
-            </div>
-          </div>
-        )}
         </div>
       </div>
 
+      {canAddTrack && (
       <div className="rounded-2xl border border-slate-200/80 bg-white p-6 shadow-md shadow-slate-900/5 ring-1 ring-slate-900/5 sm:p-8">
         <h2 className="flex items-center gap-2 text-lg font-bold text-slate-900">
           <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-indigo-100 text-indigo-700">
@@ -684,6 +649,7 @@ export function LeadDetailClient({ scope }: { scope: LeadDetailScope }) {
           {uploading ? "上传中…" : "提交跟进"}
         </button>
       </div>
+      )}
 
       <div className="rounded-2xl border border-slate-200/80 bg-white p-6 shadow-md shadow-slate-900/5 ring-1 ring-slate-900/5 sm:p-8">
         <h2 className="flex items-center gap-2 text-lg font-bold text-slate-900">

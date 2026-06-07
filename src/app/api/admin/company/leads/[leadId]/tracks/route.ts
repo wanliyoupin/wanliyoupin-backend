@@ -3,7 +3,7 @@ import { getAuthFromRequest } from "@/app/api/admin/lib/auth";
 import { getHasuraClient } from "@/config-lib/hasura-graphql-client/hasura-graphql-client";
 import {
   actorCompanyUserId,
-  actorHasAdminLead,
+  canManageLead,
   getCompanyMembership,
   resolveLeadActor,
 } from "../../../../lib/leadAuth";
@@ -11,7 +11,6 @@ import {
 type LeadBare = {
   id: number;
   company_companies: number;
-  assigned_company_users?: number | null;
   created_by_company_users?: number | null;
 };
 
@@ -23,7 +22,6 @@ async function fetchLeadBare(leadId: number): Promise<LeadBare | null> {
         company_leads_by_pk(id: $id) {
           id
           company_companies
-          assigned_company_users
           created_by_company_users
         }
       }
@@ -31,13 +29,6 @@ async function fetchLeadBare(leadId: number): Promise<LeadBare | null> {
     variables: { id: leadId },
   });
   return (res as { company_leads_by_pk?: LeadBare | null })?.company_leads_by_pk ?? null;
-}
-
-function canAddTrack(lead: LeadBare, myCuId: number, isAdmin: boolean): boolean {
-  if (isAdmin) return true;
-  return (
-    lead.assigned_company_users === myCuId || lead.created_by_company_users === myCuId
-  );
 }
 
 /**
@@ -76,7 +67,6 @@ export async function POST(
   const actor = await resolveLeadActor(req, bare.company_companies);
   if (actor instanceof NextResponse) return actor;
 
-  const admin = actorHasAdminLead(actor);
   let myCuId = actorCompanyUserId(actor);
   /** 平台管理员 JWT 不会带 company_users；若该用户在该司有成员行，用其 id 写入跟进人 */
   if (myCuId == null && actor.kind === "platform_admin") {
@@ -91,7 +81,7 @@ export async function POST(
       { status: 403 }
     );
   }
-  if (!canAddTrack(bare, myCuId, admin)) {
+  if (!canManageLead(actor, bare, myCuId)) {
     return NextResponse.json({ error: "无权限为该线索添加跟进" }, { status: 403 });
   }
 

@@ -2,16 +2,19 @@ import { NextRequest, NextResponse } from "next/server";
 import { getHasuraClient } from "@/config-lib/hasura-graphql-client/hasura-graphql-client";
 import {
   actorCompanyUserId,
-  actorHasAdminLead,
+  canManageLead,
   normalizeLeadStatus,
+  parseLeadLocationInput,
+  parseLeadMoreInfoInput,
+  mergeLeadMoreInfoFields,
   resolveLeadActor,
 } from "../../../lib/leadAuth";
 
 type LeadRow = {
   id: number;
   company_companies: number;
-  assigned_company_users?: number | null;
   created_by_company_users?: number | null;
+  more_info?: unknown;
 };
 
 async function fetchLeadBare(leadId: number): Promise<LeadRow | null> {
@@ -22,20 +25,14 @@ async function fetchLeadBare(leadId: number): Promise<LeadRow | null> {
         company_leads_by_pk(id: $id) {
           id
           company_companies
-          assigned_company_users
           created_by_company_users
+          more_info
         }
       }
     `,
     variables: { id: leadId },
   });
   return (res as { company_leads_by_pk?: LeadRow | null })?.company_leads_by_pk ?? null;
-}
-
-function canTrackerViewLead(lead: LeadRow, myCuId: number): boolean {
-  return (
-    lead.assigned_company_users === myCuId || lead.created_by_company_users === myCuId
-  );
 }
 
 /**
@@ -56,11 +53,9 @@ export async function GET(
   const actor = await resolveLeadActor(req, bare.company_companies);
   if (actor instanceof NextResponse) return actor;
 
-  if (!actorHasAdminLead(actor)) {
-    const myId = actorCompanyUserId(actor);
-    if (myId == null || !canTrackerViewLead(bare, myId)) {
-      return NextResponse.json({ error: "无权限查看该线索" }, { status: 403 });
-    }
+  const myId = actorCompanyUserId(actor);
+  if (!canManageLead(actor, bare, myId)) {
+    return NextResponse.json({ error: "无权限查看该线索" }, { status: 403 });
   }
 
   try {
@@ -78,21 +73,17 @@ export async function GET(
               id
               name
             }
-            assigned_company_users
             created_by_company_users
             converted_company_users
             converted_at
             linked_user_users
             created_at
             updated_at
+            more_info
             user {
               id
               mobile
               nickname
-            }
-            company_user {
-              id
-              user { id nickname mobile role }
             }
             companyUserByCreatedByCompanyUsers {
               id
@@ -124,51 +115,7 @@ export async function GET(
       return NextResponse.json({ error: "线索不存在" }, { status: 404 });
     }
 
-    /** 按 assigned_company_users 显式取跟进人，避免 Hasura 上 company_user 关系若未挂在「分配」外键上会错位 */
-    let assignee_company_user: {
-      id: number;
-      role?: string;
-      user?: { id: number; nickname?: string; mobile?: string; role?: string | null };
-    } | null = null;
-    const aid = lead.assigned_company_users;
-    const leadCid = lead.company_companies;
-    if (aid != null && leadCid != null) {
-      const ar = await client.execute({
-        query: `
-          query AssigneeCu($id: bigint!) {
-            company_users_by_pk(id: $id) {
-              id
-              company_companies
-              role
-              user { id nickname mobile role }
-            }
-          }
-        `,
-        variables: { id: aid },
-      });
-      const row = (
-        ar as {
-          company_users_by_pk?: {
-            id: number;
-            company_companies: number;
-            role?: string;
-            user?: { id: number; nickname?: string; mobile?: string; role?: string | null };
-          } | null;
-        }
-      )?.company_users_by_pk;
-      if (
-        row &&
-        Number(row.company_companies) === Number(leadCid)
-      ) {
-        assignee_company_user = {
-          id: row.id,
-          role: row.role,
-          user: row.user,
-        };
-      }
-    }
-
-    return NextResponse.json({ ...lead, assignee_company_user });
+    return NextResponse.json(lead);
   } catch (e: unknown) {
     console.error("admin lead get", e);
     return NextResponse.json(
@@ -181,7 +128,7 @@ export async function GET(
 /**
  * PATCH /api/admin/company/leads/[leadId]
  * Body:
- *  - 分配/更新：{ assigned_company_users?, status?, name?, phone? }
+ *  - 更新：{ status?, name?, phone?, moreInfo?, location? }
  *  - 转客户：{ action: "convert", can_view_price?, price_factor?, level?, role? }
  */
 export async function PATCH(
@@ -206,47 +153,20 @@ export async function PATCH(
   const actor = await resolveLeadActor(req, bare.company_companies);
   if (actor instanceof NextResponse) return actor;
 
-  const admin = actorHasAdminLead(actor);
   const myId = actorCompanyUserId(actor);
-  if (!admin) {
-    if (myId == null || !canTrackerViewLead(bare, myId)) {
-      return NextResponse.json({ error: "无权限修改该线索" }, { status: 403 });
-    }
+  if (!canManageLead(actor, bare, myId)) {
+    return NextResponse.json({ error: "无权限修改该线索" }, { status: 403 });
   }
 
   if (body.action === "convert") {
-    if (!admin) {
-      return NextResponse.json({ error: "仅线索管理员可执行转客户" }, { status: 403 });
-    }
     return convertLead(leadId, bare.company_companies, body);
   }
 
   const patch: Record<string, unknown> = {};
-  if (body.assigned_company_users !== undefined) {
-    if (!admin) {
-      return NextResponse.json({ error: "仅管理员可分配跟进人" }, { status: 403 });
-    }
-    const v = body.assigned_company_users;
-    if (v === null) {
-      patch.assigned_company_users = null;
-    } else {
-      const n = Number(v);
-      if (!Number.isInteger(n) || n <= 0) {
-        return NextResponse.json({ error: "无效的 assigned_company_users" }, { status: 400 });
-      }
-      patch.assigned_company_users = n;
-    }
-  }
   if (body.status !== undefined) {
     const st = normalizeLeadStatus(body.status);
     if (!st) {
-      return NextResponse.json({ error: "无效的 status" }, { status: 400 });
-    }
-    if (!admin) {
-      const allowedTracker = st === "following" || st === "won" || st === "lost";
-      if (!allowedTracker) {
-        return NextResponse.json({ error: "跟进人仅可将状态改为 following / won / lost" }, { status: 403 });
-      }
+      return NextResponse.json({ error: "无效的 status（仅 new / lost / converted）" }, { status: 400 });
     }
     if (st === "converted") {
       return NextResponse.json({ error: "请使用 action: convert 转客户" }, { status: 400 });
@@ -254,16 +174,37 @@ export async function PATCH(
     patch.status = st;
   }
   if (body.name !== undefined) {
-    if (!admin) return NextResponse.json({ error: "仅管理员可修改姓名" }, { status: 403 });
     const name = typeof body.name === "string" ? body.name.trim() : "";
     if (!name) return NextResponse.json({ error: "name 不能为空" }, { status: 400 });
     patch.name = name;
   }
   if (body.phone !== undefined) {
-    if (!admin) return NextResponse.json({ error: "仅管理员可修改电话" }, { status: 403 });
     const phone = typeof body.phone === "string" ? body.phone.trim() : "";
     if (!phone) return NextResponse.json({ error: "phone 不能为空" }, { status: 400 });
     patch.phone = phone;
+  }
+  const moreInfoPatch = parseLeadMoreInfoInput(body.moreInfo);
+  if (body.moreInfo !== undefined && moreInfoPatch === undefined) {
+    return NextResponse.json({ error: "无效的 moreInfo" }, { status: 400 });
+  }
+  const locParsed =
+    body.location !== undefined ? parseLeadLocationInput(body.location) : undefined;
+  if (body.location !== undefined && locParsed === undefined) {
+    return NextResponse.json({ error: "无效的 location" }, { status: 400 });
+  }
+  if (moreInfoPatch !== undefined || locParsed !== undefined) {
+    const nameForMore =
+      typeof patch.name === "string"
+        ? patch.name
+        : typeof body.name === "string"
+          ? body.name.trim()
+          : undefined;
+    const mergedMorePatch =
+      nameForMore && moreInfoPatch && !moreInfoPatch.companyName
+        ? { ...moreInfoPatch, companyName: nameForMore }
+        : moreInfoPatch;
+    const merged = mergeLeadMoreInfoFields(bare.more_info, mergedMorePatch, locParsed);
+    if (merged !== undefined) patch.more_info = merged;
   }
 
   if (Object.keys(patch).length === 0) {
@@ -280,7 +221,6 @@ export async function PATCH(
             name
             phone
             status
-            assigned_company_users
             updated_at
           }
         }

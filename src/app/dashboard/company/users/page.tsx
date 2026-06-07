@@ -32,20 +32,15 @@ function leadPermKeys(p: string | null | undefined): Set<string> {
   );
 }
 
-function leadPermissionsPayload(adminLead: boolean, trackLead: boolean): string | null {
-  const keys: string[] = [];
-  if (adminLead) keys.push("admin_lead");
-  if (trackLead) keys.push("track_lead");
-  return keys.length ? keys.sort().join("&") : null;
+function leadPermissionsPayload(adminLead: boolean): string | null {
+  return adminLead ? "admin_lead" : null;
 }
 
 function leadPermSummary(u: CompanyUser): string | null {
-  if (u.role === "admin") return "公司管理员（默认含线索管理/分配）";
+  if (u.role === "admin") return "公司管理员（默认含线索管理）";
   const k = leadPermKeys(u.permissions);
-  const parts: string[] = [];
-  if (k.has("admin_lead")) parts.push("线索管理");
-  if (k.has("track_lead")) parts.push("可跟进分配线索");
-  return parts.length ? parts.join("、") : null;
+  if (k.has("admin_lead")) return "线索管理";
+  return null;
 }
 
 export default function CompanyUsersPage() {
@@ -77,7 +72,6 @@ export default function CompanyUsersPage() {
   const [addCanViewPrice, setAddCanViewPrice] = useState(true);
   const [addPriceFactor, setAddPriceFactor] = useState("1");
   const [addAdminLead, setAddAdminLead] = useState(false);
-  const [addTrackLead, setAddTrackLead] = useState(false);
   const [addSubmitting, setAddSubmitting] = useState(false);
   const [searchedUser, setSearchedUser] = useState<{ id: number; mobile?: string | null; nickname?: string | null; avatar_url?: string | null } | null>(null);
   const [hasSearched, setHasSearched] = useState(false);
@@ -91,7 +85,6 @@ export default function CompanyUsersPage() {
   const [editCanViewPrice, setEditCanViewPrice] = useState(true);
   const [editPriceFactor, setEditPriceFactor] = useState("1");
   const [editAdminLead, setEditAdminLead] = useState(false);
-  const [editTrackLead, setEditTrackLead] = useState(false);
   const [editSubmitting, setEditSubmitting] = useState(false);
   const [deletingId, setDeletingId] = useState<number | null>(null);
 
@@ -280,7 +273,7 @@ export default function CompanyUsersPage() {
           level: addLevel,
           can_view_price: addCanViewPrice,
           price_factor: factor,
-          permissions: leadPermissionsPayload(addAdminLead, addTrackLead),
+          permissions: leadPermissionsPayload(addAdminLead),
         }),
       });
       const data = await res.json();
@@ -292,7 +285,6 @@ export default function CompanyUsersPage() {
         setAddCanViewPrice(true);
         setAddPriceFactor("1");
         setAddAdminLead(false);
-        setAddTrackLead(false);
         setSearchedUser(null);
         setHasSearched(false);
         setShowCreateAndAddMode(false);
@@ -315,7 +307,6 @@ export default function CompanyUsersPage() {
     setEditPriceFactor(u.price_factor != null ? String(u.price_factor) : "1");
     const pk = leadPermKeys(u.permissions);
     setEditAdminLead(pk.has("admin_lead"));
-    setEditTrackLead(pk.has("track_lead"));
     setEditOpen(true);
   };
 
@@ -339,7 +330,7 @@ export default function CompanyUsersPage() {
           level: editLevel,
           can_view_price: editCanViewPrice,
           price_factor: factor,
-          permissions: leadPermissionsPayload(editAdminLead, editTrackLead),
+          permissions: leadPermissionsPayload(editAdminLead),
         }),
       });
       const data = await res.json();
@@ -661,7 +652,7 @@ export default function CompanyUsersPage() {
               <div className="rounded-lg border border-slate-200 bg-slate-50 p-3 space-y-2">
                 <div className="text-sm font-semibold text-slate-800">线索权限</div>
                 <p className="text-xs text-slate-600 leading-relaxed">
-                  勾选「可跟进」后，成员登录可进入线索管理，查看<strong>分配给自己</strong>或<strong>自己录入</strong>的线索并写跟进。公司管理员无需勾选即可管理线索。
+                  勾选后，成员可进入线索管理：录入线索，并编辑、跟进<strong>自己录入</strong>的线索。公司管理员无需勾选即可使用。
                 </p>
                 <div className="flex flex-col gap-2">
                   <label className="flex items-center gap-2 text-sm text-slate-800">
@@ -671,16 +662,7 @@ export default function CompanyUsersPage() {
                       onChange={(e) => setAddAdminLead(e.target.checked)}
                       className="rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
                     />
-                    线索管理（录入、分配、改状态等，与普通管理员能力类似）
-                  </label>
-                  <label className="flex items-center gap-2 text-sm text-slate-800">
-                    <input
-                      type="checkbox"
-                      checked={addTrackLead}
-                      onChange={(e) => setAddTrackLead(e.target.checked)}
-                      className="rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
-                    />
-                    可跟进分配线索（推荐：只负责跟进的成员勾此项）
+                    线索管理（录入、编辑、跟进自己的线索）
                   </label>
                 </div>
               </div>
@@ -766,7 +748,7 @@ export default function CompanyUsersPage() {
               <div className="rounded-lg border border-slate-200 bg-slate-50 p-3 space-y-2">
                 <div className="text-sm font-semibold text-slate-800">线索权限</div>
                 <p className="text-xs text-slate-600 leading-relaxed">
-                  「可跟进」：成员可查看<strong>分配给自己</strong>或<strong>自己录入</strong>的线索。角色为<strong>公司管理员</strong>时默认拥有完整线索权限，下方勾选多用于非管理员成员。
+                  勾选后，成员可录入线索，并编辑、跟进<strong>自己录入</strong>的线索。公司管理员默认拥有完整线索权限。
                 </p>
                 <div className="flex flex-col gap-2">
                   <label className="flex items-center gap-2 text-sm text-slate-800">
@@ -776,16 +758,7 @@ export default function CompanyUsersPage() {
                       onChange={(e) => setEditAdminLead(e.target.checked)}
                       className="rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
                     />
-                    线索管理（录入、分配、改状态等）
-                  </label>
-                  <label className="flex items-center gap-2 text-sm text-slate-800">
-                    <input
-                      type="checkbox"
-                      checked={editTrackLead}
-                      onChange={(e) => setEditTrackLead(e.target.checked)}
-                      className="rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
-                    />
-                    可跟进分配线索
+                    线索管理（录入、编辑、跟进自己的线索）
                   </label>
                 </div>
               </div>

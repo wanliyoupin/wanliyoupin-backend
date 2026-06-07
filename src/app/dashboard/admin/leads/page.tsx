@@ -4,6 +4,14 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useAuth } from "@/app/lib/auth-context";
+import { downloadLeadExportXlsx } from "@/app/lib/exportLeadExcel";
+import {
+  fetchAllLeadsForExport,
+  readLeadCustomerLevel,
+  readLeadDisplayName,
+  readLeadListRegion,
+  statusLabel,
+} from "@/app/dashboard/components/leadListShared";
 
 type AdminCompanyRow = { id: number; name: string };
 
@@ -14,11 +22,11 @@ type LeadRow = {
   status: string;
   company_companies?: number;
   company?: { id: number; name: string } | null;
-  assigned_company_users?: number | null;
+  created_by_company_users?: number | null;
   created_at: string;
   updated_at: string;
-  company_user?: { id: number; user?: { nickname?: string; mobile?: string } } | null;
   companyUserByCreatedByCompanyUsers?: { user?: { nickname?: string; mobile?: string } } | null;
+  more_info?: unknown;
 };
 
 function leadDetailCompanyId(row: LeadRow): number | null {
@@ -27,18 +35,6 @@ function leadDetailCompanyId(row: LeadRow): number | null {
   const b = row.company_companies;
   if (b != null && Number.isFinite(Number(b))) return Number(b);
   return null;
-}
-
-function statusLabel(s: string) {
-  const m: Record<string, string> = {
-    new: "新建",
-    assigned: "已分配",
-    following: "跟进中",
-    won: "成交",
-    lost: "失败",
-    converted: "已转客户",
-  };
-  return m[s] ?? s;
 }
 
 /** 平台管理员：跨公司查看与维护线索（与「我的公司 → 线索管理」分离） */
@@ -63,10 +59,7 @@ export default function AdminLeadsPage() {
   const [page, setPage] = useState(1);
   const pageSize = 20;
 
-  const [showCreate, setShowCreate] = useState(false);
-  const [createName, setCreateName] = useState("");
-  const [createPhone, setCreatePhone] = useState("");
-  const [createErr, setCreateErr] = useState("");
+  const [exporting, setExporting] = useState(false);
 
   useEffect(() => {
     if (user?.role !== "admin" || !token) return;
@@ -128,32 +121,31 @@ export default function AdminLeadsPage() {
 
   const onSearch = () => setKeyword(searchInput.trim());
 
-  const submitCreate = async () => {
-    setCreateErr("");
-    if (!token || !adminCompanyId) return;
-    const name = createName.trim();
-    const phone = createPhone.trim();
-    if (!name || !phone) {
-      setCreateErr("请填写姓名与电话");
-      return;
+  const exportCompanyName =
+    adminCompanyId != null
+      ? adminCompanies.find((c) => c.id === adminCompanyId)?.name ?? `公司${adminCompanyId}`
+      : "全平台";
+
+  const onExport = async () => {
+    if (!token || exporting) return;
+    setExporting(true);
+    try {
+      const all = await fetchAllLeadsForExport({
+        token,
+        companyId: adminCompanyId,
+        statusFilter,
+        keyword,
+      });
+      if (all.length === 0) {
+        alert("当前没有可导出的线索");
+        return;
+      }
+      downloadLeadExportXlsx(all, exportCompanyName);
+    } catch (e) {
+      alert(e instanceof Error ? e.message : "导出失败");
+    } finally {
+      setExporting(false);
     }
-    const res = await fetch("/api/admin/company/leads", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${token}`,
-      },
-      body: JSON.stringify({ companyId: adminCompanyId, name, phone }),
-    });
-    const data = await res.json();
-    if (!res.ok) {
-      setCreateErr(data.error ?? "创建失败");
-      return;
-    }
-    setShowCreate(false);
-    setCreateName("");
-    setCreatePhone("");
-    load(1);
   };
 
   const totalPages = Math.max(1, Math.ceil(total / pageSize));
@@ -218,9 +210,6 @@ export default function AdminLeadsPage() {
               >
                 <option value="">全部</option>
                 <option value="new">新建</option>
-                <option value="assigned">已分配</option>
-                <option value="following">跟进中</option>
-                <option value="won">成交</option>
                 <option value="lost">失败</option>
                 <option value="converted">已转客户</option>
               </select>
@@ -241,62 +230,25 @@ export default function AdminLeadsPage() {
             >
               搜索
             </button>
+            <button
+              type="button"
+              disabled={exporting}
+              onClick={onExport}
+              className="rounded border border-teal-700 bg-white px-3 py-2 text-sm font-semibold text-teal-800 shadow-sm hover:bg-teal-50 disabled:opacity-50"
+            >
+              {exporting ? "导出中…" : "导出表格"}
+            </button>
             {adminCompanyId != null ? (
-              <button
-                type="button"
-                onClick={() => {
-                  setCreateErr("");
-                  setShowCreate(true);
-                }}
+              <Link
+                href={`/dashboard/admin/leads/new?companyId=${adminCompanyId}`}
                 className="rounded bg-indigo-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-700"
               >
                 录入线索
-              </button>
+              </Link>
             ) : (
               <span className="self-end text-xs text-slate-500">录入线索请先选择公司</span>
             )}
       </div>
-
-      {showCreate && (
-            <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-              <div className="w-full max-w-md space-y-4 rounded-lg bg-white p-6 shadow-lg">
-                <h2 className="text-lg font-semibold text-slate-900">录入线索</h2>
-                <div>
-                  <label className="mb-1 block text-sm font-medium text-slate-800">姓名</label>
-                  <input
-                    className="w-full rounded border border-slate-400 bg-white px-3 py-2 text-slate-900 shadow-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
-                    value={createName}
-                    onChange={(e) => setCreateName(e.target.value)}
-                  />
-                </div>
-                <div>
-                  <label className="mb-1 block text-sm font-medium text-slate-800">手机号</label>
-                  <input
-                    className="w-full rounded border border-slate-400 bg-white px-3 py-2 text-slate-900 shadow-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
-                    value={createPhone}
-                    onChange={(e) => setCreatePhone(e.target.value)}
-                  />
-                </div>
-                {createErr && <p className="text-sm text-red-600">{createErr}</p>}
-                <div className="flex justify-end gap-2">
-                  <button
-                    type="button"
-                    className="px-3 py-1.5 text-slate-600"
-                    onClick={() => setShowCreate(false)}
-                  >
-                    取消
-                  </button>
-                  <button
-                    type="button"
-                    className="rounded bg-indigo-600 px-3 py-1.5 text-white"
-                    onClick={submitCreate}
-                  >
-                    保存
-                  </button>
-                </div>
-              </div>
-            </div>
-      )}
 
       <div className="overflow-hidden rounded-lg border border-slate-200 bg-white">
             {loading ? (
@@ -311,10 +263,12 @@ export default function AdminLeadsPage() {
                       {adminCompanyId == null && (
                         <th className="px-4 py-3 text-left text-sm font-semibold text-slate-900">公司</th>
                       )}
-                      <th className="px-4 py-3 text-left text-sm font-semibold text-slate-900">姓名</th>
+                      <th className="px-4 py-3 text-left text-sm font-semibold text-slate-900">公司/姓名</th>
                       <th className="px-4 py-3 text-left text-sm font-semibold text-slate-900">手机</th>
+                      <th className="px-4 py-3 text-left text-sm font-semibold text-slate-900">地区</th>
+                      <th className="px-4 py-3 text-left text-sm font-semibold text-slate-900">客户类别</th>
                       <th className="px-4 py-3 text-left text-sm font-semibold text-slate-900">状态</th>
-                      <th className="px-4 py-3 text-left text-sm font-semibold text-slate-900">跟进人</th>
+                      <th className="px-4 py-3 text-left text-sm font-semibold text-slate-900">创建人</th>
                       <th className="px-4 py-3 text-left text-sm font-semibold text-slate-900">更新</th>
                       <th className="px-4 py-3 text-left text-sm font-semibold text-slate-900">操作</th>
                     </tr>
@@ -327,12 +281,20 @@ export default function AdminLeadsPage() {
                             {row.company?.name ?? `公司 #${row.company_companies ?? "—"}`}
                           </td>
                         )}
-                        <td className="px-4 py-2 font-medium text-slate-800">{row.name}</td>
+                        <td className="px-4 py-2 font-medium text-slate-800">
+                          {readLeadDisplayName(row.more_info, row.name)}
+                        </td>
                         <td className="px-4 py-2 text-slate-800">{row.phone}</td>
+                        <td className="max-w-[8rem] truncate px-4 py-2 text-slate-700">
+                          {readLeadListRegion(row.more_info)}
+                        </td>
+                        <td className="px-4 py-2 text-slate-700">
+                          {readLeadCustomerLevel(row.more_info, row.status)}
+                        </td>
                         <td className="px-4 py-2 text-slate-800">{statusLabel(row.status)}</td>
                         <td className="px-4 py-2 text-slate-800">
-                          {row.company_user?.user?.nickname ||
-                            row.company_user?.user?.mobile ||
+                          {row.companyUserByCreatedByCompanyUsers?.user?.nickname ||
+                            row.companyUserByCreatedByCompanyUsers?.user?.mobile ||
                             "—"}
                         </td>
                         <td className="whitespace-nowrap px-4 py-2 text-slate-700">
