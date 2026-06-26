@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { useSearchParams } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { useAuth } from "@/app/lib/auth-context";
 import { downloadProductsExcel } from "@/app/lib/exportExcel";
 import { useToast } from "@/app/components/Toast";
@@ -117,6 +117,7 @@ function CategoryTreeFilter({
 }
 
 export default function ProductsPage() {
+  const router = useRouter();
   const searchParams = useSearchParams();
   const { token, company, companyIdsIncludingSystem, systemCompanyId, user, isAdminForSelectedCompany } =
     useAuth();
@@ -147,6 +148,7 @@ export default function ProductsPage() {
   const [categoriesLoading, setCategoriesLoading] = useState(false);
   const [exporting, setExporting] = useState(false);
   const [wxacodeGenerating, setWxacodeGenerating] = useState<number | null>(null);
+  const [copyingId, setCopyingId] = useState<number | null>(null);
 
   const effectiveCompanyIdsForApi =
     scopeFilter === "all"
@@ -252,6 +254,39 @@ export default function ProductsPage() {
       }
     } catch {
       alert("删除失败");
+    }
+  };
+
+  const handleCopy = async (product: Product) => {
+    if (!token) return;
+    if (
+      !confirm(
+        `确定复制商品「${product.name}」？\n将创建副本（默认下架），可复制后修改分类再上架。`
+      )
+    ) {
+      return;
+    }
+    setCopyingId(product.id);
+    try {
+      const res = await fetch(`/api/admin/company/products/${product.id}/copy`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({}),
+      });
+      const data = await res.json();
+      if (res.ok && data?.id) {
+        toast.success("已复制，请修改分类后上架");
+        router.push(`/dashboard/company/products/${data.id}/edit`);
+      } else {
+        toast.error(data?.error || "复制失败");
+      }
+    } catch {
+      toast.error("复制失败");
+    } finally {
+      setCopyingId(null);
     }
   };
 
@@ -665,6 +700,15 @@ export default function ProductsPage() {
                       >
                         编辑
                       </Link>
+                      <span className="text-slate-300">|</span>
+                      <button
+                        type="button"
+                        disabled={copyingId === product.id}
+                        onClick={() => handleCopy(product)}
+                        className="text-indigo-600 hover:underline disabled:opacity-50"
+                      >
+                        {copyingId === product.id ? "复制中…" : "复制"}
+                      </button>
                       <span className="text-slate-300">|</span>
                     </>
                   )}
